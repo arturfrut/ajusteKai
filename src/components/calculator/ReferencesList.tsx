@@ -8,31 +8,25 @@ interface ReferencesListProps {
 
 export const ReferencesList = ({ onSelectionChange }: ReferencesListProps) => {
   const [selectedRefs, setSelectedRefs] = useState<string[]>([
-    'dolar-blue',
-    'canasta-basica', 
-    'indice-alquileres'
+    'ipc',
+    'cer',
+    'dolar-blue'
   ])
-
   const references = [
-    {
-      id: 'dolar-blue',
-      label: 'Dólar Blue',
-      frequency: 'daily' as const
-    },
-    {
-      id: 'canasta-basica',
-      label: 'Canasta Básica',
-      frequency: 'monthly' as const
-    },
-    {
-      id: 'indice-alquileres',
-      label: 'Índice de Alquileres',
-      frequency: 'monthly' as const
-    },
     {
       id: 'ipc',
       label: 'IPC INDEC',
       frequency: 'monthly' as const
+    },
+    {
+      id: 'cer',
+      label: 'CER (Alquileres)',
+      frequency: 'daily' as const
+    },
+    {
+      id: 'dolar-blue',
+      label: 'Dólar Blue',
+      frequency: 'daily' as const
     },
     {
       id: 'dolar-oficial',
@@ -52,7 +46,7 @@ export const ReferencesList = ({ onSelectionChange }: ReferencesListProps) => {
   // Notificar cambios al padre
   useEffect(() => {
     onSelectionChange(selectedRefs)
-  }, [selectedRefs])
+  }, [selectedRefs, onSelectionChange])
 
   return (
     <div className="space-y-3">

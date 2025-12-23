@@ -1,26 +1,6 @@
-export interface SeriesDataPoint {
+interface SeriesDataPoint {
   date: string // YYYY-MM-DD
   value: number
-}
-
-const normalizeMonthlyDate = (date: string): string => {
-  const d = new Date(date)
-
-  // siempre primer día del mes
-  const year = d.getFullYear()
-  const month = String(d.getMonth() + 1).padStart(2, '0')
-
-  return `${year}-${month}-01`
-}
-
-const today = new Date()
-const todayMonthly = `${today.getFullYear()}-${String(
-  today.getMonth() + 1
-).padStart(2, '0')}-01`
-
-const clampStartDate = (date: string): string => {
-  const normalized = normalizeMonthlyDate(date)
-  return normalized > todayMonthly ? todayMonthly : normalized
 }
 
 const getSeriesData = async (
@@ -28,12 +8,10 @@ const getSeriesData = async (
   startDate: string
 ): Promise<SeriesDataPoint[]> => {
   try {
-    const safeStartDate = clampStartDate(startDate)
-
     const response = await fetch(
       `https://apis.datos.gob.ar/series/api/series` +
         `?ids=${seriesId}` +
-        `&start_date=${safeStartDate}` +
+        `&start_date=${startDate}` +
         `&limit=5000` +
         `&format=json`
     )
@@ -57,10 +35,7 @@ const getSeriesData = async (
   }
 }
 
-
-const calculateAccumulatedIncrease = (
-  data: SeriesDataPoint[]
-): number => {
+const calculateAccumulatedIncrease = (data: SeriesDataPoint[]): number => {
   if (data.length < 2) return 0
 
   const sorted = [...data].sort(
@@ -73,71 +48,118 @@ const calculateAccumulatedIncrease = (
   return ((last / first) - 1) * 100
 }
 
-const projectFutureIncrease = (
-  data: SeriesDataPoint[],
-  targetDate: string
-): number => {
+// Calcular tasa mensual promedio de los últimos N meses
+const calculateMonthlyAverageRate = (data: SeriesDataPoint[], lastNMonths: number = 6): number => {
   if (data.length < 2) return 0
 
   const sorted = [...data].sort(
     (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
   )
 
-  const firstDate = new Date(sorted[0].date)
-  const lastDate = new Date(sorted[sorted.length - 1].date)
-  const target = new Date(targetDate)
+  // Tomar solo los últimos N meses
+  const recentData = sorted.slice(-lastNMonths)
+  
+  if (recentData.length < 2) return 0
 
-  const totalIncrease = calculateAccumulatedIncrease(sorted)
-  const monthsElapsed =
-    (lastDate.getFullYear() - firstDate.getFullYear()) * 12 +
-    (lastDate.getMonth() - firstDate.getMonth())
+  const first = recentData[0].value
+  const last = recentData[recentData.length - 1].value
+  const monthsElapsed = recentData.length - 1
 
-  if (monthsElapsed <= 0) return totalIncrease
+  // Calcular tasa de crecimiento total y dividir por meses
+  const totalGrowth = (last / first) - 1
+  const monthlyRate = Math.pow(1 + totalGrowth, 1 / monthsElapsed) - 1
 
-  const monthlyAvg = totalIncrease / monthsElapsed
-
-  const futureMonths =
-    (target.getFullYear() - lastDate.getFullYear()) * 12 +
-    (target.getMonth() - lastDate.getMonth())
-
-  return totalIncrease + monthlyAvg * futureMonths
+  return monthlyRate
 }
 
+// Proyectar inflación futura basándose en tendencia reciente
+const projectFutureInflation = async (targetDate: string): Promise<number> => {
+  try {
+    // Obtener datos de los últimos 12 meses
+    const startDate = new Date()
+    startDate.setMonth(startDate.getMonth() - 12)
+    
+    const startDateStr = startDate.toISOString().split('T')[0]
+    const data = await getSeriesData(IPC_SERIES_ID, startDateStr)
 
-const ALQUILERES_SERIES_ID = '169.1_ICCPN_0_M_38'
-const CANASTA_SERIES_ID = '444.1_CANASTA_batotPampeana_0_0_26_47'
+    if (data.length < 2) {
+      // Fallback: usar tasa estimada del 3% mensual
+      const today = new Date()
+      const target = new Date(targetDate)
+      const monthsDiff = Math.round(
+        (target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24 * 30)
+      )
+      return (Math.pow(1.03, monthsDiff) - 1) * 100
+    }
+
+    // Calcular tasa mensual promedio de los últimos 6 meses
+    const monthlyRate = calculateMonthlyAverageRate(data, 6)
+
+    // Calcular meses desde hoy hasta la fecha objetivo
+    const today = new Date()
+    const target = new Date(targetDate)
+    const monthsToFuture = Math.round(
+      (target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24 * 30)
+    )
+
+    if (monthsToFuture <= 0) return 0
+
+    // Proyectar usando tasa mensual promedio
+    return (Math.pow(1 + monthlyRate, monthsToFuture) - 1) * 100
+
+  } catch (error) {
+    console.error('Error projecting future inflation:', error)
+    // Fallback: 3% mensual
+    const today = new Date()
+    const target = new Date(targetDate)
+    const monthsDiff = Math.round(
+      (target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24 * 30)
+    )
+    return (Math.pow(1.03, monthsDiff) - 1) * 100
+  }
+}
+
 const IPC_SERIES_ID = '148.3_INIVELNAL_DICI_M_26'
-
-
-
-
 
 export const calculateIPCIncrease = async (
   startDate: string,
   targetDate?: string
 ): Promise<number> => {
+  // Si hay targetDate y es una fecha futura, proyectar
+  if (targetDate) {
+    const today = new Date()
+    const target = new Date(targetDate)
+    
+    if (target > today) {
+      // Fecha futura: proyectar inflación
+      return await projectFutureInflation(targetDate)
+    }
+  }
+
+  // Fecha pasada o sin targetDate: calcular histórico
   const data = await getSeriesData(IPC_SERIES_ID, startDate)
-  return targetDate
-    ? projectFutureIncrease(data, targetDate)
-    : calculateAccumulatedIncrease(data)
+  return calculateAccumulatedIncrease(data)
 }
 
-export const calculateCanastaBasicaIncrease = async (
+
+const CER_SERIES_ID = '94.2_CD_D_0_0_10'
+
+export const calculateCERIncrease = async (
   startDate: string,
   targetDate?: string
 ): Promise<number> => {
-  const data = await getSeriesData(CANASTA_SERIES_ID, startDate)
-  return targetDate
-    ? projectFutureIncrease(data, targetDate)
-    : calculateAccumulatedIncrease(data)
-}
+  // Si hay targetDate y es una fecha futura, proyectar
+  if (targetDate) {
+    const today = new Date()
+    const target = new Date(targetDate)
+    
+    if (target > today) {
+      // Para CER futuro, usar proyección del IPC (CER sigue inflación)
+      return await projectFutureInflation(targetDate)
+    }
+  }
 
-export const calculateAlquileresIncrease = async (
-  startDate: string,
-  targetDate?: string
-): Promise<number> => {
-  const data = await getSeriesData(ALQUILERES_SERIES_ID, startDate)
-  return targetDate
-    ? projectFutureIncrease(data, targetDate)
-    : calculateAccumulatedIncrease(data)
+  // Fecha pasada o sin targetDate: calcular histórico
+  const data = await getSeriesData(CER_SERIES_ID, startDate)
+  return calculateAccumulatedIncrease(data)
 }

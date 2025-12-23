@@ -8,22 +8,20 @@ import { AlertCircle } from 'lucide-react'
 import { FutureDateCalculator } from './FutureDateCalculator'
 import { ThankYouCard } from '../sections/ThankYouCard'
 import { calculateDolarBlueIncrease, calculateDolarOficialIncrease } from '@/services/dolarApi'
-import { calculateIPCIncrease, calculateCanastaBasicaIncrease, calculateAlquileresIncrease } from '@/services/indecApi'
+import { calculateCERIncrease, calculateIPCIncrease } from '@/services/indecApi'
 
 // Mapeo de referencias a sus funciones de API
 const API_FETCHERS: Record<string, (startDate: string) => Promise<number | null>> = {
-  'dolar-blue': calculateDolarBlueIncrease,
-  'canasta-basica': calculateCanastaBasicaIncrease,
-  'indice-alquileres': calculateAlquileresIncrease,
   'ipc': calculateIPCIncrease,
+  'cer': calculateCERIncrease,
+  'dolar-blue': calculateDolarBlueIncrease,
   'dolar-oficial': calculateDolarOficialIncrease
 }
 
 const REFERENCE_LABELS: Record<string, string> = {
-  'dolar-blue': 'Dólar Blue',
-  'canasta-basica': 'Canasta Básica',
-  'indice-alquileres': 'Índice de Alquileres',
   'ipc': 'IPC INDEC',
+  'cer': 'CER (Alquileres)',
+  'dolar-blue': 'Dólar Blue',
   'dolar-oficial': 'Dólar Oficial'
 }
 
@@ -214,8 +212,12 @@ export const CalculatorForm = () => {
           />
 
           {/* Calculador de fecha futura */}
-          <FutureDateCalculator currentValue={Math.round(newValue)} />
-          
+<FutureDateCalculator 
+  currentValue={Math.round(newValue)}
+  selectedRefs={selectedRefs}
+  referenceLabels={REFERENCE_LABELS}
+  apiFetchers={API_FETCHERS}
+/>          
           {/* Thank you card */}
           <ThankYouCard />
         </div>

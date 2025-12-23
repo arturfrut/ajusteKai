@@ -2,27 +2,53 @@ import { useState } from 'react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
-import { Calendar } from 'lucide-react'
+import { Calendar, Loader2 } from 'lucide-react'
 
 interface FutureDateCalculatorProps {
   currentValue: number
+  selectedRefs: string[]
+  referenceLabels: Record<string, string>
+  apiFetchers: Record<string, (startDate: string, targetDate?: string) => Promise<number | null>>
 }
 
-export const FutureDateCalculator = ({ currentValue }: FutureDateCalculatorProps) => {
+export const FutureDateCalculator = ({ 
+  currentValue, 
+  selectedRefs,
+  referenceLabels,
+  apiFetchers
+}: FutureDateCalculatorProps) => {
   const [targetDate, setTargetDate] = useState('')
-  const [futureValue, setFutureValue] = useState<number | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [futureData, setFutureData] = useState<Record<string, number>>({})
+  const [showResult, setShowResult] = useState(false)
 
-  const handleCalculate = () => {
-    // Simulamos inflación mensual del 4% (después viene de API)
-    const monthlyInflation = 0.04
-    const today = new Date()
-    const target = new Date(targetDate)
-    const monthsDiff = Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24 * 30))
+  const handleCalculate = async () => {
+    if (!targetDate) return
     
-    if (monthsDiff <= 0) return
+    setLoading(true)
+    setFutureData({})
+    setShowResult(true)
     
-    const futureVal = currentValue * Math.pow(1 + monthlyInflation, monthsDiff)
-    setFutureValue(Math.round(futureVal))
+    const today = new Date().toISOString().split('T')[0]
+    
+    // Calcular para cada referencia
+    for (const refId of selectedRefs) {
+      try {
+        const fetcher = apiFetchers[refId]
+        const percentage = await fetcher(today, targetDate)
+        
+        if (percentage !== null) {
+          setFutureData(prev => ({
+            ...prev,
+            [refId]: percentage
+          }))
+        }
+      } catch (error) {
+        console.error(`Error calculating future for ${refId}:`, error)
+      }
+    }
+    
+    setLoading(false)
   }
 
   const getMinDate = () => {
@@ -30,6 +56,15 @@ export const FutureDateCalculator = ({ currentValue }: FutureDateCalculatorProps
     tomorrow.setDate(tomorrow.getDate() + 1)
     return tomorrow.toISOString().split('T')[0]
   }
+
+  // Calcular promedio
+  const loadedPercentages = Object.values(futureData)
+  const avgPercentage =
+    loadedPercentages.length > 0
+      ? loadedPercentages.reduce((a, b) => a + b, 0) / loadedPercentages.length
+      : 0
+
+  const futureValue = currentValue * (1 + avgPercentage / 100)
 
   return (
     <div className="bg-secondary rounded-lg p-6 border border-border">
@@ -55,21 +90,63 @@ export const FutureDateCalculator = ({ currentValue }: FutureDateCalculatorProps
         </div>
         <Button 
           onClick={handleCalculate}
-          disabled={!targetDate}
+          disabled={!targetDate || loading}
         >
-          Calcular
+          {loading ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              Calculando...
+            </>
+          ) : (
+            'Calcular'
+          )}
         </Button>
       </div>
 
-      {futureValue && (
-        <div className="mt-6 bg-primary/10 border border-primary/30 rounded-lg p-4">
-          <p className="text-sm text-muted-foreground mb-1">Para esa fecha deberías cobrar</p>
-          <p className="text-3xl font-bold text-primary">
-            ${futureValue.toLocaleString('es-AR')}
-          </p>
-          <p className="text-sm text-muted-foreground mt-2">
-            Aumento necesario: +{(((futureValue - currentValue) / currentValue) * 100).toFixed(1)}%
-          </p>
+      {showResult && (
+        <div className="mt-6 space-y-4">
+          {/* Resultado principal */}
+          <div className="bg-primary/10 border border-primary/30 rounded-lg p-4">
+            <p className="text-sm text-muted-foreground mb-1">Para esa fecha deberías cobrar</p>
+            <p className="text-3xl font-bold text-primary">
+              ${Math.round(futureValue).toLocaleString('es-AR')}
+            </p>
+            <p className="text-sm text-muted-foreground mt-2">
+              Aumento necesario: +{avgPercentage.toFixed(1)}%
+            </p>
+          </div>
+
+          {/* Desglose por referencia */}
+          {Object.keys(futureData).length > 0 && (
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground font-medium">Detalle por referencia</p>
+              {selectedRefs.map((refId) => {
+                const percentage = futureData[refId]
+                const isLoading = loading && percentage === undefined
+                const refValue = currentValue * (1 + (percentage || 0) / 100)
+                
+                return (
+                  <div
+                    key={refId}
+                    className="flex justify-between items-center p-3 rounded-lg bg-muted/50 border border-border"
+                  >
+                    <span className="text-sm font-medium">{referenceLabels[refId]}</span>
+                    {isLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    ) : percentage !== undefined ? (
+                      <div className="text-right">
+                        <span className="text-sm font-semibold text-primary">
+                          +{percentage.toFixed(1)}% / ${Math.round(refValue).toLocaleString('es-AR')}
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">Sin datos</span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>

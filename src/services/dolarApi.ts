@@ -19,17 +19,30 @@ const getDolarActual = async (type: 'oficial' | 'blue'): Promise<number | null> 
 }
 
 // Fallback: estimar aumento basado en tasa mensual promedio
-const estimateDolarIncrease = (startDate: string, monthlyRate: number): number => {
+const estimateDolarIncrease = (
+  startDate: string, 
+  monthlyRate: number, 
+  targetDate?: string
+): number => {
   const start = new Date(startDate)
-  const today = new Date()
-  const months = Math.round((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 30))
+  const end = targetDate ? new Date(targetDate) : new Date()
+  const months = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 30))
   
   return (Math.pow(1 + monthlyRate, months) - 1) * 100
 }
 
-// Calcular aumento del dólar blue (híbrido: valor actual real + histórico estimado)
-export const calculateDolarBlueIncrease = async (startDate: string): Promise<number | null> => {
+// Calcular aumento del dólar blue
+export const calculateDolarBlueIncrease = async (
+  startDate: string,
+  targetDate?: string
+): Promise<number | null> => {
   try {
+    // Si hay targetDate (fecha futura), usar estimación directa
+    if (targetDate) {
+      return estimateDolarIncrease(startDate, 0.035, targetDate)
+    }
+    
+    // Si no hay targetDate, calcular desde startDate hasta hoy con valor real
     const actualValue = await getDolarActual('blue')
     
     // Si falla la API, usar estimación pura
@@ -47,13 +60,22 @@ export const calculateDolarBlueIncrease = async (startDate: string): Promise<num
     return ((actualValue - estimatedHistorical) / estimatedHistorical) * 100
   } catch (error) {
     console.error('Error calculating dolar blue increase:', error)
-    return estimateDolarIncrease(startDate, 0.035)
+    return estimateDolarIncrease(startDate, 0.035, targetDate)
   }
 }
 
-// Calcular aumento del dólar oficial (híbrido: valor actual real + histórico estimado)
-export const calculateDolarOficialIncrease = async (startDate: string): Promise<number | null> => {
+// Calcular aumento del dólar oficial
+export const calculateDolarOficialIncrease = async (
+  startDate: string,
+  targetDate?: string
+): Promise<number | null> => {
   try {
+    // Si hay targetDate (fecha futura), usar estimación directa
+    if (targetDate) {
+      return estimateDolarIncrease(startDate, 0.03, targetDate)
+    }
+    
+    // Si no hay targetDate, calcular desde startDate hasta hoy con valor real
     const actualValue = await getDolarActual('oficial')
     
     // Si falla la API, usar estimación pura
@@ -71,6 +93,6 @@ export const calculateDolarOficialIncrease = async (startDate: string): Promise<
     return ((actualValue - estimatedHistorical) / estimatedHistorical) * 100
   } catch (error) {
     console.error('Error calculating dolar oficial increase:', error)
-    return estimateDolarIncrease(startDate, 0.03)
+    return estimateDolarIncrease(startDate, 0.03, targetDate)
   }
 }
